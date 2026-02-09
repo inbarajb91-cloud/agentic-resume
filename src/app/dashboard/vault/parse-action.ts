@@ -5,7 +5,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import console from 'console'
 import { revalidatePath } from 'next/cache'
 // @ts-ignore
-import pdf from 'pdf-parse/lib/pdf-parse'
+// @ts-ignore
+const pdf = require('pdf-parse')
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
