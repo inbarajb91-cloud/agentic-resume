@@ -26,6 +26,9 @@ export async function parseAndSaveResume(formData: FormData) {
     }
 
     // 2. Parse with Gemini
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not set')
+    }
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
     const prompt = `
     You are an expert resume parser. Extract the following information from the resume text below and return a JSON array of experience items.
@@ -44,23 +47,42 @@ export async function parseAndSaveResume(formData: FormData) {
     ${text}
   `
 
-    const result = await model.generateContent(prompt)
-    const response = await result.response
-    const jsonString = response.text().replace(/```json/g, '').replace(/```/g, '').trim()
-
     let parsedData
     try {
+        const result = await model.generateContent(prompt)
+        const response = await result.response
+        const jsonString = response.text().replace(/```json/g, '').replace(/```/g, '').trim()
         parsedData = JSON.parse(jsonString)
+        
+        if (!Array.isArray(parsedData)) {
+            throw new Error('Response is not an array')
+        }
     } catch (e) {
-        console.error("Failed to parse Gemini response", jsonString)
-        throw new Error("Failed to parse resume with AI")
+        console.error("Failed to parse Gemini response or execute model", e)
+        throw new Error("Failed to parse resume with AI. Please try again.")
     }
 
     // 3. Save to Supabase
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-    if (!user) throw new Error('Unauthorized')
+    if (authError || !user) throw new Error('Unauthorized')
+
+    // Check if profile exists
+    const { data: profile } = await supabase.from('profiles').select('id').eq('id', user.id).single()
+    if (!profile) {
+        // Attempt to create profile if missing (fallback for existing users without profile)
+        const { error: profileError } = await supabase.from('profiles').insert({
+            id: user.id,
+            email: user.email!,
+            full_name: user.user_metadata?.full_name || '',
+        })
+        
+        if (profileError) {
+             console.error("Failed to create missing profile", profileError)
+             throw new Error("User profile missing and could not be created.")
+        }
+    }
 
     const itemsToInsert = parsedData.map((item: any) => ({
         ...item,
@@ -72,7 +94,7 @@ export async function parseAndSaveResume(formData: FormData) {
 
     if (error) {
         console.error("Supabase Insert Error", error)
-        throw new Error(error.message)
+        throw new Error(`Database Error: ${error.message}`)
     }
 
     revalidatePath('/dashboard/vault')
