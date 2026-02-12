@@ -53,7 +53,7 @@ export async function parseAndSaveResume(formData: FormData) {
         const response = await result.response
         const jsonString = response.text().replace(/```json/g, '').replace(/```/g, '').trim()
         parsedData = JSON.parse(jsonString)
-        
+
         if (!Array.isArray(parsedData)) {
             throw new Error('Response is not an array')
         }
@@ -67,22 +67,6 @@ export async function parseAndSaveResume(formData: FormData) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) throw new Error('Unauthorized')
-
-    // Check if profile exists
-    const { data: profile } = await supabase.from('profiles').select('id').eq('id', user.id).single()
-    if (!profile) {
-        // Attempt to create profile if missing (fallback for existing users without profile)
-        const { error: profileError } = await supabase.from('profiles').insert({
-            id: user.id,
-            email: user.email!,
-            full_name: user.user_metadata?.full_name || '',
-        })
-        
-        if (profileError) {
-             console.error("Failed to create missing profile", profileError)
-             throw new Error("User profile missing and could not be created.")
-        }
-    }
 
     const itemsToInsert = parsedData.map((item: any) => ({
         ...item,
